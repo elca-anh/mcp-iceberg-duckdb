@@ -1,6 +1,6 @@
 # MCP Iceberg Catalog
 
-A MCP (Model Context Protocol) server implementation for interacting with Apache Iceberg tables. This server provides a SQL interface for querying and managing Iceberg tables through Claude desktop.
+A MCP (Model Context Protocol) server implementation for interacting with Apache Iceberg. This server provides a SQL interface for querying and managing Iceberg tables through Claude desktop.
 
 ## Claude Desktop as your Iceberg Data Lake Catalog
 ![image](claude-desktop-ss.png)
