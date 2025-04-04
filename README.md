@@ -1,11 +1,21 @@
 # MCP Iceberg Catalog
 
+[![smithery badge](https://smithery.ai/badge/@ahodroj/mcp-iceberg-service)](https://smithery.ai/server/@ahodroj/mcp-iceberg-service)
+
 A MCP (Model Context Protocol) server implementation for interacting with Apache Iceberg. This server provides a SQL interface for querying and managing Iceberg tables through Claude desktop.
 
 ## Claude Desktop as your Iceberg Data Lake Catalog
 ![image](claude-desktop-ss.png)
 
 ## How to Install in Claude Desktop
+
+### Installing via Smithery
+
+To install MCP Iceberg Catalog for Claude Desktop automatically via [Smithery](https://smithery.ai/server/@ahodroj/mcp-iceberg-service):
+
+```bash
+npx -y @smithery/cli install @ahodroj/mcp-iceberg-service --client claude
+```
 
 1. **Prerequisites**
    - Python 3.10 or higher
@@ -119,5 +129,4 @@ The server utilizes PyIceberg in several ways:
    - [ ] Add retry mechanisms for transient failures
    - [ ] Implement transaction support
    - [ ] Add data validation
-
 

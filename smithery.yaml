@@ -1,0 +1,51 @@
+# Smithery configuration file: https://smithery.ai/docs/config#smitheryyaml
+
+startCommand:
+  type: stdio
+  configSchema:
+    # JSON Schema defining the configuration options for the MCP.
+    type: object
+    required:
+      - icebergCatalogUri
+      - icebergWarehouse
+    properties:
+      icebergCatalogUri:
+        type: string
+        default: http://localhost:8181
+        description: URI to the Iceberg REST catalog endpoint
+      icebergWarehouse:
+        type: string
+        default: default_warehouse
+        description: Name of the Iceberg warehouse
+      s3Endpoint:
+        type: string
+        default: ""
+        description: Optional S3 endpoint if using S3 for storage
+      awsAccessKeyId:
+        type: string
+        default: ""
+        description: AWS access key ID for S3
+      awsSecretAccessKey:
+        type: string
+        default: ""
+        description: AWS secret access key for S3
+  commandFunction:
+    # A JS function that produces the CLI command based on the given config to start the MCP on stdio.
+    |-
+    (config) => ({
+      command: 'mcp-server-iceberg',
+      args: [],
+      env: {
+        ICEBERG_CATALOG_URI: config.icebergCatalogUri,
+        ICEBERG_WAREHOUSE: config.icebergWarehouse,
+        S3_ENDPOINT: config.s3Endpoint || '',
+        AWS_ACCESS_KEY_ID: config.awsAccessKeyId || '',
+        AWS_SECRET_ACCESS_KEY: config.awsSecretAccessKey || ''
+      }
+    })
+  exampleConfig:
+    icebergCatalogUri: http://localhost:8181
+    icebergWarehouse: my_iceberg_warehouse
+    s3Endpoint: http://localhost:9000
+    awsAccessKeyId: exampleAccessKeyId
+    awsSecretAccessKey: exampleSecretAccessKey
