@@ -2,6 +2,7 @@
 .env
 *.env
 !.env.template
+.pyiceberg.yaml
 
 # Python
 __pycache__/

@@ -1,4 +1,5 @@
-pyiceberg
+duckdb
+pyiceberg[adlfs,duckdb]
 python-dotenv
 mcp
 pyarrow  # Required for PyIceberg data handling

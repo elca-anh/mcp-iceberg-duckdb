@@ -4,15 +4,15 @@ version = "0.1.0"
 description = "MCP server for interacting with an Apache Iceberg catalog and data lake"
 readme = "README.md"
 requires-python = ">=3.10"  
-dependencies = [  
-    "mcp>=1.0.0",                    
-    "pyiceberg>=0.5.1",             # Apache Iceberg Python SDK
-    "pyarrow>=14.0.1",              # PyArrow for data handling
-    "sqlparse>=0.4.4",              # SQL parsing
-    "python-dotenv",                # Environment variable management
-    "requests",                     # HTTP requests for REST catalog
-    "fsspec",                       # Filesystem abstraction
-    "s3fs",                        # S3 filesystem support
+dependencies = [
+    "mcp>=1.0.0",
+    "pyiceberg[adlfs,duckdb,pandas]>=0.5.1", # Apache Iceberg Python SDK
+    "pyarrow>=14.0.1", # PyArrow for data handling
+    "sqlparse>=0.4.4", # SQL parsing
+    "python-dotenv", # Environment variable management
+    "requests", # HTTP requests for REST catalog
+    "fsspec", # Filesystem abstraction
+    "s3fs", # S3 filesystem support
 ]
 
 # Build system configuration 

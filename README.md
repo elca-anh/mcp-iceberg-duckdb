@@ -1,28 +1,48 @@
 # MCP Iceberg Catalog
 
-[![smithery badge](https://smithery.ai/badge/@ahodroj/mcp-iceberg-service)](https://smithery.ai/server/@ahodroj/mcp-iceberg-service)
+A MCP (Model Context Protocol) server to talk to your data in Iceberg format using an LLM, for example Claude.
 
-A MCP (Model Context Protocol) server implementation for interacting with Apache Iceberg. This server provides a SQL interface for querying and managing Iceberg tables through Claude desktop.
-
-## Claude Desktop as your Iceberg Data Lake Catalog
+## Claude Desktop as your Iceberg Data Lake browser
 ![image](claude-desktop-ss.png)
 
 ## How to Install in Claude Desktop
 
-### Installing via Smithery
 
-To install MCP Iceberg Catalog for Claude Desktop automatically via [Smithery](https://smithery.ai/server/@ahodroj/mcp-iceberg-service):
+# Install
 
-```bash
-npx -y @smithery/cli install @ahodroj/mcp-iceberg-service --client claude
-```
-
-1. **Prerequisites**
+## Prerequisites
    - Python 3.10 or higher
    - UV package installer (recommended) or pip
-   - Access to an Iceberg REST catalog and S3-compatible storage
+   - Access to an Iceberg REST catalog and the corresponding lake storage (S3, ADLS...)
 
-2. **How to install in Claude Desktop**
+
+## Install procedure
+
+At this time there is no packaging, sources are used
+
+- Install Python dependencies with uv
+
+First review the module dependencies in requirements.txt to match your case (AWS, Azure, GCP...)
+
+Then install or update the dependencies
+
+```python
+uv add -r .\requirements.txt
+```
+
+- Setup connection to the Iceberg dictionary
+
+Configure a catalog **named "iceberg"** and its access credentials using either .pyiceberg.yaml file or environment variables as explained in the [Pyiceberg documentation](https://py.iceberg.apache.org/configuration/)
+
+- Basic check of the server startup
+
+```python
+uv run mcp-server-iceberg
+```
+
+You should get the INFO message "Starting server"
+
+# How to configure in Claude Desktop
 Add the following configuration to `claude_desktop_config.json`:
 
 ```json
@@ -35,14 +55,7 @@ Add the following configuration to `claude_desktop_config.json`:
         "PATH_TO_/mcp-iceberg-service",
         "run",
         "mcp-server-iceberg"
-      ],
-      "env": {
-        "ICEBERG_CATALOG_URI" : "http://localhost:8181",
-        "ICEBERG_WAREHOUSE" : "YOUR ICEBERG WAREHOUSE NAME",
-        "S3_ENDPOINT" : "OPTIONAL IF USING S3",
-        "AWS_ACCESS_KEY_ID" : "YOUR S3 ACCESS KEY",
-        "AWS_SECRET_ACCESS_KEY" : "YOUR S3 SECRET KEY"
-      }
+      ]
     }
   }
 }
@@ -64,12 +77,11 @@ The MCP server is built on three main components:
    - Supports operations:
      - LIST TABLES
      - DESCRIBE TABLE
-     - SELECT
+     - SELECT (single table)
      - INSERT
 
 3. **Iceberg Integration**
-   - Uses `pyiceberg` for table operations
-   - Integrates with PyArrow for efficient data handling
+   - Uses `pyiceberg` in conjonction with `duckdb` for table operations
    - Manages catalog connections and table operations
 
 ### PyIceberg Integration
@@ -87,44 +99,44 @@ The server utilizes PyIceberg in several ways:
    - Manages table schemas and field types
 
 3. **Query Execution**
-   - Translates SQL to PyIceberg operations
-   - Handles data scanning and filtering
+   - Basic integration between Pyiceberg and Duckdb through a full scan of the Iceberg table and in memory Arrow table
    - Manages result set conversion
 
 ## Further Implementation Needed
 
-1. **Query Operations**
+1. **Query Operations improvements**
    - [ ] Implement UPDATE operations
    - [ ] Add DELETE support
    - [ ] Support for CREATE TABLE with schema definition
    - [ ] Add ALTER TABLE operations
    - [ ] Implement table partitioning support
 
-2. **Data Types**
+2. **Data Types improvements**
    - [ ] Support for complex types (arrays, maps, structs)
    - [ ] Add timestamp with timezone handling
    - [ ] Support for decimal types
    - [ ] Add nested field support
 
-3. **Performance Improvements**
+3. **Performance improvements**
+   - [ ] Use Duckdb's Iceberg extension to avoid full scan
    - [ ] Implement batch inserts
    - [ ] Add query optimization
    - [ ] Support for parallel scans
    - [ ] Add caching layer for frequently accessed data
 
-4. **Security Features**
+4. **Security improvements**
    - [ ] Add authentication mechanisms
    - [ ] Implement role-based access control
    - [ ] Add row-level security
    - [ ] Support for encrypted connections
 
-5. **Monitoring and Management**
+5. **Monitoring and Management improvements**
    - [ ] Add metrics collection
    - [ ] Implement query logging
    - [ ] Add performance monitoring
    - [ ] Support for table maintenance operations
 
-6. **Error Handling**
+6. **Error Handling improvements**
    - [ ] Improve error messages
    - [ ] Add retry mechanisms for transient failures
    - [ ] Implement transaction support
