@@ -1,5 +1,10 @@
 # MCP Iceberg Catalog
 
+**WARNING: this is a demonstrator, not a production grade code package for the following reasons:**
+1. MCP is not able to handle large datasets, the maximum payload exchanged is 1MB. The data exchange is actually through JSON which is not compressed
+2. The implementation of the SELECT is pretty crude, based on the full scan of the table and download to the local machine before applying the SELECT statement (WHERE, GROUPBY, LIMIT...)
+3. Support only single table queries, but won't complain a priori if you try more complex queries
+
 A MCP (Model Context Protocol) server to talk to your data in Iceberg format using an LLM, for example Claude.
 
 ## Claude Desktop as your Iceberg Data Lake browser
