@@ -2,67 +2,12 @@ import pytest
 from unittest.mock import Mock, patch
 import pyarrow as pa
 from pyiceberg.schema import Schema
-from pyiceberg.types import StringType, IntegerType, DoubleType, BooleanType, TimestampType, NestedField
+from pyiceberg.types import StringType, IntegerType, DoubleType, NestedField
 from pyiceberg.catalog import Catalog
 from pyiceberg.table import Table
-import sqlparse
 
 # Import the class to test
 from mcp_server_iceberg.IcebergConnection import IcebergConnection
-
-# Fixtures for parameterized tests
-@pytest.mark.parametrize("query,expected_type", [
-    ("SELECT * FROM users", "SELECT"),
-    ("SELECT name FROM customers WHERE active = 1", "SELECT"),
-    ("SELECT 1 + 1", "SELECT"),
-    ("INSERT INTO orders VALUES (1, 100)", "INSERT"),
-    ("INSERT INTO test.users (id, name) VALUES (1, 'John')", "INSERT"),
-    ("UPDATE products SET price = 10", "UPDATE"),
-    ("UPDATE users SET name = 'Jane' WHERE id = 1", "UPDATE"),
-    ("DELETE FROM logs WHERE date < '2023-01-01'", "DELETE"),
-    ("CREATE TABLE new_table (id INT)", "CREATE"),
-    ("CREATE TABLE IF NOT EXISTS users (id INT, name STRING)", "CREATE"),
-    ("", None),
-    ("   \n  \t  ", None)
-])
-def test_parse_sql_parametrized(query, expected_type):
-    """Parametrized test for SQL parsing"""
-    connection = IcebergConnection()
-    result = connection._parse_sql(query)
-    
-    assert result["type"] == expected_type
-
-# Fixtures for parameterized tests
-@pytest.mark.parametrize("query,expected_table", [
-    ("SELECT * FROM users", "users"),
-    ("SELECT * FROM users u", "users"),
-    ("SELECT * FROM users AS u", "users"),
-    ("SELECT u.name, p.title FROM users u JOIN posts p ON u.id = p.user_id", "users"),
-    ("SELECT * FROM schema.table_name LIMIT(5)", "schema.table_name"),
-    ("SELECT name FROM customers WHERE active = 1", "customers"),
-    ("SELECT 1 + 1", None)
-])
-def test_parse_sql_select_table_parametrized(query, expected_table):
-    """Parametrized test for SQL SELECT table name parsing"""
-    statement = sqlparse.parse(query)[0]
-    
-    table_name = IcebergConnection._extract_select_table(statement)
-    
-    assert table_name == expected_table
-
-# Fixtures for parameterized tests
-@pytest.mark.parametrize("query,expected_table, expected_values", [
-    ("INSERT INTO orders VALUES (1, 100)", "orders", [1, 100]),
-    ("INSERT INTO test.users (id, name) VALUES (1, 'John')", "test.users", [1, 'John']),
-])
-def test_parse_sql_insert_table_parametrized(query, expected_table,expected_values):
-    """Parametrized test for SQL INSERT table name parsing"""
-    statement = sqlparse.parse(query)[0]
-    
-    (table_name, values) = IcebergConnection._extract_insert_table_values(statement)
-    
-    assert table_name == expected_table
-    assert values == expected_values
 
 class TestIcebergConnection:
     """Test suite for IcebergConnection class"""
@@ -314,13 +259,6 @@ class TestIcebergConnectionErrorHandling:
         
         with pytest.raises(Exception, match="Connection failed"):
             connection.query_table("SELECT * FROM users")
-    
-    def test_parse_sql_malformed_query(self, connection):
-        """Test parsing malformed SQL"""
-        # This should not raise an exception, but return None values
-        result = connection._parse_sql("INVALID SQL QUERY")
-        assert result["type"] is None
-
-
+            
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

@@ -2,13 +2,12 @@ import pyarrow as pa
 from pyiceberg.catalog import load_catalog
 from pyiceberg.schema import Schema
 from pyiceberg.types import *
-import sqlparse
-from sqlparse.sql import Statement
-from sqlparse import tokens as sqltokens
 
 import logging
 import time
-from typing import Any, Dict
+from typing import Any
+
+from .QueryManager import QueryManager
 
 logger = logging.getLogger('iceberg_server')
 
@@ -84,12 +83,12 @@ class IcebergConnection:
             catalog = self._ensure_connection()
                  
             # Handle SQL queries
-            parsed = self._parse_sql(query)
+            parsedQuery = QueryManager(query)
             
-            if parsed["type"] == "SELECT":
+            if parsedQuery.type == "SELECT":
 
                 # Load and scan table
-                table_name = IcebergConnection._extract_select_table(parsed["statement"])
+                table_name = parsedQuery.extract_select_table()
                 table = catalog.load_table(table_name)
                 scan = table.scan()
                 
@@ -114,9 +113,9 @@ class IcebergConnection:
                 logger.info(f"Query returned {len(results)} rows in {time.time() - start_time:.2f}s")
                 return results
             
-            elif parsed["type"] == "INSERT":
+            elif parsedQuery.type == "INSERT":
                 # Extract table name and values
-                (table_name, values) = IcebergConnection._extract_insert_table_values(parsed["statement"])
+                (table_name, values) = parsedQuery.extract_insert_table_values()
                 
                 if not table_name or values is None:
                     raise ValueError(f"Invalid INSERT statement, missing table name or values")
@@ -155,7 +154,7 @@ class IcebergConnection:
                 
                 return [{"status": "Inserted 1 row successfully"}]
 
-            if parsed["type"] == "CREATE":
+            if parsedQuery.type == "CREATE":
                 # Basic CREATE TABLE support            
                 if "CREATE TABLE" in query.strip().upper():
                     # Extract table name and schema
@@ -185,7 +184,7 @@ class IcebergConnection:
                     return [{"status": "Table created successfully"}]
 
             else:
-                raise ValueError(f"Unsupported query type: {parsed['type']}")
+                raise ValueError(f"Unsupported query type: {parsedQuery.type}")
                 
         except Exception as e:
             logger.error(f"Query error: {str(e)}")
@@ -213,94 +212,3 @@ class IcebergConnection:
         except Exception as e:
             logger.error(f"Connection error: {str(e)}")
             raise
-
-    def _parse_sql(self, query: str) -> Dict:
-        """
-        Parse SQL query and extract relevant information
-        
-        Args:
-            query (str): SQL query to parse
-            
-        Returns:
-            Dict: Parsed query information
-        """
-        result = {
-            "statement": None,
-            "type": None,
-        }
-
-        query = query.strip()
-        
-        # Check for empty query
-        if not query:
-            return result
-        logger.debug(f"Query to parse: {query}")
-        statement = sqlparse.parse(query)[0]
-        result['statement'] = statement
-                
-        # Determine query type
-        for token in statement.tokens:
-            if token.ttype is sqltokens.DML or token.ttype is sqltokens.DDL:
-                result["type"] = token.value.upper()
-                break
-        
-        return result
-    
-    @staticmethod 
-    def _extract_select_table(statement: Statement) -> str | None:
-        """ Extract table name for the SELECT
-            A this time only support single table in the FROM sub-statement
-            JOINs are not supported
-        """
-        for i, token in enumerate(statement.tokens):
-            if token.value.upper() == "FROM" and len(statement.tokens) > i + 2:
-                # Skip whitespace
-                name_token = statement.tokens[i + 2]
-                # Discard any table alias
-                return name_token.normalized.split(' ')[0]
-            
-        return None
-    
-
-    @staticmethod
-    def _extract_insert_table_values(statement: Statement) -> tuple[str, list]:
-        values_token = None
-        table_name = None
-        for token in statement.tokens:
-            if isinstance(token, sqlparse.sql.Identifier):
-                # Handle multi-part identifiers (e.g., schema.table) but do not take schema
-                table_name = str(token).split(" ")[0]
-            elif isinstance(token, sqlparse.sql.Values):
-                values_token = token
-                break
-        
-        values = []
-        if values_token:
-            for token in values_token.tokens:
-                if isinstance(token, sqlparse.sql.Parenthesis):
-                    if values: # Multiple record insert is not supported so far
-                        raise ValueError(f"INSERT with multiple rows unsupported")
-
-                    # TODO rewrite from the tokens of token instead of serializing to a string
-                    values_str = token.value.strip('()').split(',')
-                    values = []
-                    for v in values_str:
-                        v = v.strip()
-                        if v.startswith("'") and v.endswith("'"):
-                            values.append(v.strip("'"))
-                        elif v.lower() == 'true':
-                            values.append(True)
-                        elif v.lower() == 'false':
-                            values.append(False)
-                        elif v.lower() == 'null':
-                            values.append(None)
-                        else:
-                            try:
-                                values.append(int(v))
-                            except ValueError:
-                                try:
-                                    values.append(float(v))
-                                except ValueError:
-                                    values.append(v)                    
-                    
-        return (table_name, values)
