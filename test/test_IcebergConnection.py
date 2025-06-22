@@ -5,10 +5,64 @@ from pyiceberg.schema import Schema
 from pyiceberg.types import StringType, IntegerType, DoubleType, BooleanType, TimestampType, NestedField
 from pyiceberg.catalog import Catalog
 from pyiceberg.table import Table
+import sqlparse
 
 # Import the class to test
 from mcp_server_iceberg.IcebergConnection import IcebergConnection
 
+# Fixtures for parameterized tests
+@pytest.mark.parametrize("query,expected_type", [
+    ("SELECT * FROM users", "SELECT"),
+    ("SELECT name FROM customers WHERE active = 1", "SELECT"),
+    ("SELECT 1 + 1", "SELECT"),
+    ("INSERT INTO orders VALUES (1, 100)", "INSERT"),
+    ("INSERT INTO test.users (id, name) VALUES (1, 'John')", "INSERT"),
+    ("UPDATE products SET price = 10", "UPDATE"),
+    ("UPDATE users SET name = 'Jane' WHERE id = 1", "UPDATE"),
+    ("DELETE FROM logs WHERE date < '2023-01-01'", "DELETE"),
+    ("CREATE TABLE new_table (id INT)", "CREATE"),
+    ("CREATE TABLE IF NOT EXISTS users (id INT, name STRING)", "CREATE"),
+    ("", None),
+    ("   \n  \t  ", None)
+])
+def test_parse_sql_parametrized(query, expected_type):
+    """Parametrized test for SQL parsing"""
+    connection = IcebergConnection()
+    result = connection._parse_sql(query)
+    
+    assert result["type"] == expected_type
+
+# Fixtures for parameterized tests
+@pytest.mark.parametrize("query,expected_table", [
+    ("SELECT * FROM users", "users"),
+    ("SELECT * FROM users u", "users"),
+    ("SELECT * FROM users AS u", "users"),
+    ("SELECT u.name, p.title FROM users u JOIN posts p ON u.id = p.user_id", "users"),
+    ("SELECT * FROM schema.table_name LIMIT(5)", "schema.table_name"),
+    ("SELECT name FROM customers WHERE active = 1", "customers"),
+    ("SELECT 1 + 1", None)
+])
+def test_parse_sql_select_table_parametrized(query, expected_table):
+    """Parametrized test for SQL SELECT table name parsing"""
+    statement = sqlparse.parse(query)[0]
+    
+    table_name = IcebergConnection._extract_select_table(statement)
+    
+    assert table_name == expected_table
+
+# Fixtures for parameterized tests
+@pytest.mark.parametrize("query,expected_table, expected_values", [
+    ("INSERT INTO orders VALUES (1, 100)", "orders", [1, 100]),
+    ("INSERT INTO test.users (id, name) VALUES (1, 'John')", "test.users", [1, 'John']),
+])
+def test_parse_sql_insert_table_parametrized(query, expected_table,expected_values):
+    """Parametrized test for SQL INSERT table name parsing"""
+    statement = sqlparse.parse(query)[0]
+    
+    (table_name, values) = IcebergConnection._extract_insert_table_values(statement)
+    
+    assert table_name == expected_table
+    assert values == expected_values
 
 class TestIcebergConnection:
     """Test suite for IcebergConnection class"""
@@ -78,39 +132,7 @@ class TestIcebergConnection:
         
         with pytest.raises(Exception, match="Connection failed"):
             connection._ensure_connection()
-    
-    def test_parse_sql_select(self, connection):
-        """Test parsing SELECT query"""
-        query = "SELECT * FROM users WHERE id = 1"
-        result = connection._parse_sql(query)
-        
-        assert result["type"] == "SELECT"
-        assert result["table"] == "users"
-    
-    def test_parse_sql_insert(self, connection):
-        """Test parsing INSERT query"""
-        query = "INSERT INTO users VALUES (1, 'John')"
-        result = connection._parse_sql(query)
-        
-        assert result["type"] == "INSERT"
-        assert result["table"] is None  # FROM not present in INSERT
-    
-    def test_parse_sql_create(self, connection):
-        """Test parsing CREATE query"""
-        query = "CREATE TABLE users (id INT, name STRING)"
-        result = connection._parse_sql(query)
-        
-        assert result["type"] == "CREATE"
-        assert result["table"] is None  # FROM not present in CREATE
-    
-    def test_parse_sql_update(self, connection):
-        """Test parsing UPDATE query"""
-        query = "UPDATE users SET name = 'Jane' WHERE id = 1"
-        result = connection._parse_sql(query)
-        
-        assert result["type"] == "UPDATE"
-        assert result["table"] is None  # No FROM in UPDATE
-    
+                
     @patch.object(IcebergConnection, '_ensure_connection')
     def test_query_catalog_list_tables(self, mock_ensure_connection, connection, mock_catalog):
         """Test LIST TABLES command"""
@@ -250,7 +272,6 @@ class TestIcebergConnection:
         connection.close()  # Should not raise any exception
         assert connection.catalog is None
 
-
 class TestIcebergConnectionIntegration:
     """Integration tests for IcebergConnection"""
     
@@ -258,43 +279,6 @@ class TestIcebergConnectionIntegration:
     def connection(self):
         return IcebergConnection()
     
-    def test_parse_sql_complex_select_queries(self, connection):
-        """Test parsing complex SQL queries"""
-        queries = [
-            ("SELECT u.name, p.title FROM users u JOIN posts p ON u.id = p.user_id", "SELECT", "users"),
-            ("SELECT * FROM schema.table_name LIMIT(5)", "SELECT", "schema.table_name")
-        ]
-        
-        for query, expected_type, expected_table in queries:
-            result = connection._parse_sql(query)
-            assert result["type"] == expected_type
-            if expected_table:
-                assert result["table"] == expected_table
-    
-    def test_parse_sql_complex_insert_queries(self, connection):
-        """Test parsing complex SQL queries"""
-        queries = [
-            ("INSERT INTO test.users (id, name) VALUES (1, 'John')", "INSERT", None)
-        ]
-        
-        for query, expected_type, expected_table in queries:
-            result = connection._parse_sql(query)
-            assert result["type"] == expected_type
-            if expected_table:
-                assert result["table"] == expected_table
-
-    def test_parse_sql_complex_create_queries(self, connection):
-        """Test parsing complex SQL queries"""
-        queries = [
-            ("CREATE TABLE IF NOT EXISTS users (id INT, name STRING)", "CREATE", None)
-        ]
-        
-        for query, expected_type, expected_table in queries:
-            result = connection._parse_sql(query)
-            assert result["type"] == expected_type
-            if expected_table:
-                assert result["table"] == expected_table
-
     @patch('mcp_server_iceberg.IcebergConnection.logger')
     def test_logging_behavior(self, mock_logger, connection):
         """Test that logging is properly called"""
@@ -306,42 +290,6 @@ class TestIcebergConnectionIntegration:
             
             mock_logger.error.assert_called()
     
-    def test_query_parsing_edge_cases(self, connection):
-        """Test edge cases in query parsing"""
-        # Empty query
-        result = connection._parse_sql("")
-        assert result["type"] is None
-        assert result["table"] is None
-        
-        # Query with only whitespace
-        result = connection._parse_sql("   \n  \t  ")
-        assert result["type"] is None
-        assert result["table"] is None
-        
-        # Query without FROM clause
-        result = connection._parse_sql("SELECT 1 + 1")
-        assert result["type"] == "SELECT"
-        assert result["table"] is None
-
-
-# Fixtures for parameterized tests
-@pytest.mark.parametrize("query,expected_type,expected_table", [
-    ("SELECT * FROM users", "SELECT", "users"),
-    ("SELECT name FROM customers WHERE active = 1", "SELECT", "customers"),
-    ("INSERT INTO orders VALUES (1, 100)", "INSERT", None),
-    ("UPDATE products SET price = 10", "UPDATE", None),
-    ("DELETE FROM logs WHERE date < '2023-01-01'", "DELETE", None),
-    ("CREATE TABLE new_table (id INT)", "CREATE", None),
-])
-def test_parse_sql_parametrized(query, expected_type, expected_table):
-    """Parametrized test for SQL parsing"""
-    connection = IcebergConnection()
-    result = connection._parse_sql(query)
-    
-    assert result["type"] == expected_type
-    if expected_table:
-        assert result["table"] == expected_table
-
 
 # Performance and error handling tests
 class TestIcebergConnectionErrorHandling:
@@ -372,7 +320,6 @@ class TestIcebergConnectionErrorHandling:
         # This should not raise an exception, but return None values
         result = connection._parse_sql("INVALID SQL QUERY")
         assert result["type"] is None
-        assert result["table"] is None
 
 
 if __name__ == "__main__":
