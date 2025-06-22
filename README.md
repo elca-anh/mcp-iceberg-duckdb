@@ -82,8 +82,8 @@ The MCP server is built on three main components:
    - Supports operations:
      - LIST TABLES
      - DESCRIBE TABLE
-     - SELECT (single table)
-     - INSERT
+     - SELECT (single table!)
+     - INSERT (single row!)
 
 3. **Iceberg Integration**
    - Uses `pyiceberg` in conjonction with `duckdb` for table operations
@@ -125,7 +125,6 @@ The server utilizes PyIceberg in several ways:
 3. **Performance improvements**
    - [ ] Use Duckdb's Iceberg extension to avoid full scan
    - [ ] Implement batch inserts
-   - [ ] Add query optimization
    - [ ] Support for parallel scans
    - [ ] Add caching layer for frequently accessed data
 

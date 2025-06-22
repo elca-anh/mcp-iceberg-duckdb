@@ -10,10 +10,12 @@ from mcp.types import Tool, TextContent
 from pyiceberg.expressions import *
 from pyiceberg.types import *
 from .IcebergConnection import IcebergConnection
+import sys
 
 # Configure logging
 logging.basicConfig(
-    level=logging.DEBUG,
+    stream=sys.stderr,
+    level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger('iceberg_server')
@@ -38,14 +40,28 @@ class IcebergServer(Server):
             """
             return [
                 Tool(
-                    name="execute_query",
+                    name="query_catalog",
+                    description="Interact with on Iceberg catalog",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "query": {
+                                "type": "string",
+                                "description": "Query to execute on the catalog (LIST TABLES, DESCRIBE TABLE)"
+                            }
+                        },
+                        "required": ["query"]
+                    }
+                ),
+                Tool(
+                    name="query_table",
                     description="Execute a query on Iceberg tables",
                     inputSchema={
                         "type": "object",
                         "properties": {
                             "query": {
                                 "type": "string",
-                                "description": "Query to execute (supports: LIST TABLES, DESCRIBE TABLE, SELECT, CREATE TABLE)"
+                                "description": "Query to execute on the table (SELECT, INSERT)"
                             }
                         },
                         "required": ["query"]
@@ -65,23 +81,35 @@ class IcebergServer(Server):
             Returns:
                 list[TextContent]: Execution results
             """
-            if name == "execute_query":
-                start_time = time.time()
-                try:
-                    result = self.db.execute_query(arguments["query"])
+            
+            try:
+                if name == "query_catalog":
+                    start_time = time.time()
+                    result = self.db.query_catalog(arguments["query"])
                     execution_time = time.time() - start_time
                     
                     return [TextContent(
                         type="text",
                         text=f"Results (execution time: {execution_time:.2f}s):\n{json.dumps(result, indent=2, default=str)}"
                     )]
-                except Exception as e:
-                    error_message = f"Error executing query: {str(e)}"
-                    logger.error(error_message)
+                
+                elif name == "query_table":
+                    start_time = time.time()
+                    result = self.db.query_table(arguments["query"])
+                    execution_time = time.time() - start_time
+                    
                     return [TextContent(
                         type="text",
-                        text=error_message
+                        text=f"Results (execution time: {execution_time:.2f}s):\n{json.dumps(result, indent=2, default=str)}"
                     )]
+                
+            except Exception as e:
+                error_message = f"Error executing query: {str(e)}"
+                logger.error(error_message)
+                return [TextContent(
+                    type="text",
+                    text=error_message
+                )]
 
     def __del__(self):
         """

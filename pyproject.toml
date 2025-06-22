@@ -24,6 +24,11 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/mcp_server_iceberg"] 
 
+[dependency-groups]
+dev = [
+    "pytest>=8.4.1",
+]
+
 
 [project.scripts]
 mcp-server-iceberg = "mcp_server_iceberg.server:run_server"  

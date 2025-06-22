@@ -2,11 +2,10 @@ import logging
 import time
 from typing import Any, Dict
 from pyiceberg.catalog import load_catalog
-from pyiceberg.expressions import *
 from pyiceberg.schema import Schema
 from pyiceberg.types import *
 import sqlparse
-from sqlparse.tokens import DML
+from sqlparse import tokens as sqltokens
 import pyarrow as pa
 
 logger = logging.getLogger('iceberg_server')
@@ -18,7 +17,7 @@ class IcebergConnection:
     def __init__(self):
         self.catalog = None
             
-    def ensure_connection(self):
+    def _ensure_connection(self):
         """
         Ensure catalog connection is available
         """
@@ -32,7 +31,7 @@ class IcebergConnection:
             logger.error(f"Connection error: {str(e)}")
             raise
 
-    def parse_sql(self, query: str) -> Dict:
+    def _parse_sql(self, query: str) -> Dict:
         """
         Parse SQL query and extract relevant information
         
@@ -42,32 +41,42 @@ class IcebergConnection:
         Returns:
             Dict: Parsed query information
         """
-        parsed = sqlparse.parse(query)[0]
-        tokens = [token for token in parsed.tokens if not token.is_whitespace]
-        
         result = {
+            "statement": None,
             "type": None,
             "table": None,
         }
+
+        query = query.strip()
         
+        # Check for empty query
+        if not query:
+            return result
+        logger.debug(f"Query to parse: {query}")
+        statement = sqlparse.parse(query)[0]
+        result['statement'] = statement
+                
         # Determine query type
-        for token in tokens:
-            if token.ttype is DML:
+        for token in statement.tokens:
+            if token.ttype is sqltokens.DML or token.ttype is sqltokens.DDL:
                 result["type"] = token.value.upper()
                 break
         
-        # Extract table name
-        for i, token in enumerate(tokens):
-            if token.value.upper() == "FROM":
-                if i + 1 < len(tokens):
-                    result["table"] = tokens[i + 1].value
-                break
+        # Extract table name for the SELECT
+        if result["type"] == 'SELECT':
+            for i, token in enumerate(statement.tokens):
+                if token.value.upper() == "FROM" and len(statement.tokens) > i + 2:
+                    # Skip whitespace
+                    name_token = statement.tokens[i + 2]
+                    # Discard any table alias
+                    result["table"] = name_token.normalized.split(' ')[0]
+                    break
         
         return result
 
-    def execute_query(self, query: str) -> list[dict[str, Any]]:
+    def query_catalog(self, query: str) -> list[dict[str, Any]]:
         """
-        Execute query on Iceberg tables
+        Retrieve information or create table (DDL) on Iceberg catalog
         
         Args:
             query (str): Query to execute
@@ -79,7 +88,7 @@ class IcebergConnection:
         logger.info(f"Executing query: {query[:200]}...")
         
         try:
-            catalog = self.ensure_connection()
+            catalog = self._ensure_connection()
             query_upper = query.strip().upper()
             
             # Handle special commands
@@ -103,10 +112,34 @@ class IcebergConnection:
                     "sort_order": [str(field) for field in (table.sort_order().fields if table.sort_order() else [])],
                     "properties": table.properties
                 }
-                return [schema_dict]
+                return [schema_dict]          
+            else:
+                raise ValueError(f"Unsupported catalog query type")
             
+        except Exception as e:
+            logger.error(f"Query error: {str(e)}")
+            logger.error(f"Error type: {type(e).__name__}")
+            raise
+
+    def query_table(self, query: str) -> list[dict[str, Any]]:
+        """
+        Execute a data modeling query on an Iceberg table
+        
+        Args:
+            query (str): Query to execute
+            
+        Returns:
+            list[dict[str, Any]]: Query results
+        """
+
+        start_time = time.time()
+        logger.info(f"Executing query: {query[:200]}...")
+        
+        try:
+            catalog = self._ensure_connection()
+                 
             # Handle SQL queries
-            parsed = self.parse_sql(query)
+            parsed = self._parse_sql(query)
             
             if parsed["type"] == "SELECT":
 
@@ -140,19 +173,14 @@ class IcebergConnection:
                 table_name = None
                 values = []
                 
-                # Parse INSERT INTO table_name VALUES (...) syntax
-                parsed_stmt = sqlparse.parse(query)[0]
-                logger.info(f"Parsed statement: {parsed_stmt}")
-                
                 # Find the VALUES token and extract values
                 values_token = None
                 table_identifier = None
                 
-                for token in parsed_stmt.tokens:
-                    logger.info(f"Token: {token}, Type: {token.ttype}, Value: {token.value}")
+                for token in parsed['statement'].tokens:
                     if isinstance(token, sqlparse.sql.Identifier):
                         table_identifier = token
-                    elif token.value.upper() == 'VALUES':
+                    elif isinstance(token, sqlparse.sql.Values):
                         values_token = token
                         break
                 
@@ -161,39 +189,43 @@ class IcebergConnection:
                     table_name = str(table_identifier)
                     logger.info(f"Found table name: {table_name}")
                 
-                if values_token and len(parsed_stmt.tokens) > parsed_stmt.tokens.index(values_token) + 1:
-                    next_token = parsed_stmt.tokens[parsed_stmt.tokens.index(values_token) + 1]
-                    if isinstance(next_token, sqlparse.sql.Parenthesis):
-                        values_str = next_token.value.strip('()').split(',')
-                        values = []
-                        for v in values_str:
-                            v = v.strip()
-                            if v.startswith("'") and v.endswith("'"):
-                                values.append(v.strip("'"))
-                            elif v.lower() == 'true':
-                                values.append(True)
-                            elif v.lower() == 'false':
-                                values.append(False)
-                            elif v.lower() == 'null':
-                                values.append(None)
-                            else:
-                                try:
-                                    values.append(int(v))
-                                except ValueError:
+                if values_token:
+                    for token in values_token.tokens:
+                        if isinstance(token, sqlparse.sql.Parenthesis):
+                            if values: # Multiple record insert is not supported so far
+                                raise ValueError(f"INSERT with multiple rows unsupported")
+
+                            # TODO rewrite from the tokens of token instead of serializing to a string
+                            values_str = token.value.strip('()').split(',')
+                            values = []
+                            for v in values_str:
+                                v = v.strip()
+                                if v.startswith("'") and v.endswith("'"):
+                                    values.append(v.strip("'"))
+                                elif v.lower() == 'true':
+                                    values.append(True)
+                                elif v.lower() == 'false':
+                                    values.append(False)
+                                elif v.lower() == 'null':
+                                    values.append(None)
+                                else:
                                     try:
-                                        values.append(float(v))
+                                        values.append(int(v))
                                     except ValueError:
-                                        values.append(v)
-                        logger.info(f"Extracted values: {values}")
+                                        try:
+                                            values.append(float(v))
+                                        except ValueError:
+                                            values.append(v)
+                            logger.info(f"Extracted values: {values}")
                 
                 if not table_name or values is None:
-                    raise ValueError(f"Invalid INSERT statement format. Table: {table_name}, Values: {values}")
+                    raise ValueError(f"Invalid INSERT statement format on table: {table_name}")
                 
                 logger.info(f"Inserting into table: {table_name}")
                 logger.info(f"Values: {values}")
                 
                 # Load table and schema
-                table = catalog.load_table(table_name)
+                table = catalog.load_table(table_name.split('.'))
                 schema = table.schema()
                 
                 # Create PyArrow arrays for each field
@@ -222,10 +254,10 @@ class IcebergConnection:
                 table.append(pa_table)
                 
                 return [{"status": "Inserted 1 row successfully"}]
-            
-            elif parsed["type"] == "CREATE":
-                # Basic CREATE TABLE support
-                if "CREATE TABLE" in query_upper:
+
+            if parsed["type"] == "CREATE":
+                # Basic CREATE TABLE support            
+                if "CREATE TABLE" in query.strip().upper():
                     # Extract table name and schema
                     parts = query.split("(", 1)
                     table_name = parts[0].replace("CREATE TABLE", "").strip()
@@ -251,7 +283,7 @@ class IcebergConnection:
                     schema = Schema(*schema_fields)
                     catalog.create_table(table_name, schema)
                     return [{"status": "Table created successfully"}]
-            
+
             else:
                 raise ValueError(f"Unsupported query type: {parsed['type']}")
                 
