@@ -33,30 +33,45 @@ class IcebergConnection:
         
         try:
             catalog = self._ensure_connection()
-            query_upper = query.strip().upper()
+            parsedQuery = QueryManager(query)
             
             # Handle special commands
-            if query_upper.startswith("LIST TABLES"):
-                results = []
-                for namespace in catalog.list_namespaces():
-                    for table in catalog.list_tables(namespace):
+            if parsedQuery.type == "LIST":
+                (subtype, argument) = parsedQuery.extract_list_arguments()
+                if subtype == "NAMESPACES":
+                    results = []
+                    namespaces = catalog.list_namespaces(argument) if argument else catalog.list_namespaces()
+                    for namespace in namespaces:
                         results.append({
-                            "namespace": ".".join(namespace),
-                            "table": table
-                        })
-                logger.info(f"Listed {len(results)} tables in {time.time() - start_time:.2f}s")
-                return results
+                                "namespace": ".".join(namespace)
+                            })
+                    logger.info(f"Listed {len(results)} namespaces in {time.time() - start_time:.2f}s")
+                    return results
+                
+                elif subtype == "TABLES":
+                    results = []
+                    # List tables at namespace level or all available namespaces in root
+                    namespaces = [(argument,)] if argument else catalog.list_namespaces()
+                    for namespace in namespaces:
+                        for table in catalog.list_tables(namespace):
+                            results.append({
+                                "namespace": ".".join(namespace),
+                                "table": table
+                            })
+                    logger.info(f"Listed {len(results)} tables in {time.time() - start_time:.2f}s")
+                    return results
             
-            elif query_upper.startswith("DESCRIBE TABLE"):
-                table_name = query[len("DESCRIBE TABLE"):].strip()
-                table = catalog.load_table(table_name)
-                schema_dict = {
-                    "schema": str(table.schema()),
-                    "partition_spec": [str(field) for field in (table.spec().fields if table.spec() else [])],
-                    "sort_order": [str(field) for field in (table.sort_order().fields if table.sort_order() else [])],
-                    "properties": table.properties
-                }
-                return [schema_dict]          
+            elif parsedQuery.type == "DESCRIBE":
+                if parsedQuery.statement.tokens[2].value.upper() == "TABLE":
+                    table_name = parsedQuery.statement.tokens[4].value
+                    table = catalog.load_table(table_name)
+                    schema_dict = {
+                        "schema": str(table.schema()),
+                        "partition_spec": [str(field) for field in (table.spec().fields if table.spec() else [])],
+                        "sort_order": [str(field) for field in (table.sort_order().fields if table.sort_order() else [])],
+                        "properties": table.properties
+                    }
+                    return [schema_dict]          
             else:
                 raise ValueError(f"Unsupported catalog query type")
             

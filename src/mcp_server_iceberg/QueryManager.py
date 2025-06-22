@@ -1,6 +1,9 @@
 import sqlparse
 from sqlparse.sql import Statement
+from sqlparse import keywords
 from sqlparse import tokens as sqltokens
+
+from typing import Any
 
 class QueryManager:
 
@@ -13,8 +16,43 @@ class QueryManager:
 
     def __init__(self, query: str):
         self._raw_query = query.strip()
+
+        # Extend sqlparse
+        sqlLexer = sqlparse.lexer.Lexer.get_default_instance()
+        # Reset Lexer
+        sqlLexer.clear()
+        sqlLexer.add_keywords(
+            {'LIST': sqlparse.tokens.DDL,
+             'DESCRIBE': sqlparse.tokens.DDL,
+             'NAMESPACES': sqlparse.tokens.Keyword,
+             'IN': sqlparse.tokens.Keyword })
+        # Add standard regexp & keywords
+        sqlLexer.set_SQL_REGEX(keywords.SQL_REGEX)
+        sqlLexer.add_keywords(keywords.KEYWORDS_COMMON)
+        sqlLexer.add_keywords(keywords.KEYWORDS_ORACLE)
+        sqlLexer.add_keywords(keywords.KEYWORDS)
+
         self._parse_sql()
  
+    def extract_list_arguments(self) -> tuple[str, Any]:
+        """ Extract the subtype of LIST and the optional parameter 
+            Subtype is either NAMESPACES or TABLES
+        """
+        subtype = None
+        argument = None
+        if self.statement.tokens[2].value.upper() == "NAMESPACES":
+            subtype = "NAMESPACES"
+        elif self.statement.tokens[2].value.upper() == "TABLES":
+            subtype = "TABLES"
+        
+        # Look for a namespace to list from
+        for token in self.statement.tokens[4:]:
+            if isinstance(token, sqlparse.sql.Identifier):
+                argument = token.value
+
+        return (subtype, argument)
+
+
     def extract_select_table(self) -> str | None:
         """ Extract table name for the SELECT
             At this time only support single table in the FROM sub-statement

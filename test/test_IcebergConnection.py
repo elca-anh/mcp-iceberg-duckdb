@@ -77,7 +77,37 @@ class TestIcebergConnection:
         
         with pytest.raises(Exception, match="Connection failed"):
             connection._ensure_connection()
-                
+
+    @patch.object(IcebergConnection, '_ensure_connection')
+    def test_query_catalog_list_namespaces(self, mock_ensure_connection, connection, mock_catalog):
+        """Test LIST TABLES command"""
+        mock_ensure_connection.return_value = mock_catalog
+        mock_catalog.list_namespaces.return_value = [("default",), ("test",)]
+        
+        result = connection.query_catalog("LIST NAMESPACES")
+        
+        mock_catalog.list_namespaces.assert_called_once()
+        expected = [
+            {"namespace": "default"},
+            {"namespace": "test"}
+        ]
+        assert result == expected
+
+    @patch.object(IcebergConnection, '_ensure_connection')
+    def test_query_catalog_list_specific_namespaces(self, mock_ensure_connection, connection, mock_catalog):
+        """Test LIST TABLES command"""
+        mock_ensure_connection.return_value = mock_catalog
+        mock_catalog.list_namespaces.return_value = [("silver",), ("gold",)]
+        
+        result = connection.query_catalog("LIST NAMESPACES myNamespace")
+        
+        mock_catalog.list_namespaces.assert_called_once_with("myNamespace")
+        expected = [
+            {"namespace": "silver"},
+            {"namespace": "gold"}
+        ]
+        assert result == expected
+
     @patch.object(IcebergConnection, '_ensure_connection')
     def test_query_catalog_list_tables(self, mock_ensure_connection, connection, mock_catalog):
         """Test LIST TABLES command"""
@@ -93,6 +123,22 @@ class TestIcebergConnection:
         expected = [
             {"namespace": "default", "table": ("default", "table1")},
             {"namespace": "default", "table": ("default", "table2")},
+            {"namespace": "test", "table": ("test", "table3")}
+        ]
+        assert result == expected
+
+    @patch.object(IcebergConnection, '_ensure_connection')
+    def test_query_catalog_list_specific_tables(self, mock_ensure_connection, connection, mock_catalog):
+        """Test LIST TABLES IN myNamespace command"""
+        mock_ensure_connection.return_value = mock_catalog
+        mock_catalog.list_namespaces.return_value = []
+        mock_catalog.list_tables.side_effect = [
+            [("test", "table3")]
+        ]
+        
+        result = connection.query_catalog("LIST TABLES IN test")
+        
+        expected = [           
             {"namespace": "test", "table": ("test", "table3")}
         ]
         assert result == expected

@@ -17,6 +17,10 @@ from mcp_server_iceberg.QueryManager import QueryManager
     ("DELETE FROM logs WHERE date < '2023-01-01'", "DELETE"),
     ("CREATE TABLE new_table (id INT)", "CREATE"),
     ("CREATE TABLE IF NOT EXISTS users (id INT, name STRING)", "CREATE"),
+    ("LIST NAMESPACES", "LIST"),
+    ("LIST TABLES", "LIST"),
+    ("LIST TABLES myNamespace", "LIST"),
+    ("DESCRIBE TABLE silver.myTable", "DESCRIBE"),
     ("", None),
     ("   \n  \t  ", None),
     ("INVALID SQL QUERY", None)
@@ -26,6 +30,26 @@ def test_parse_sql_parametrized(query, expected_type):
     parsedQuery = QueryManager(query)
     
     assert parsedQuery.type == expected_type
+
+# Fixtures for parameterized tests
+@pytest.mark.parametrize("query,expected_subtype, expected_argument", [
+    ("LIST NAMESPACES", "NAMESPACES", None),
+    ("LIST NAMESPACES myNamespace", "NAMESPACES", "myNamespace"),
+    ("LIST NAMESPACES IN myNamespace", "NAMESPACES", "myNamespace"),
+    ("LIST TABLES", "TABLES", None),
+    ("LIST TABLES myNamespace", "TABLES", "myNamespace"),
+    ("LIST TABLES IN myNamespace", "TABLES", "myNamespace"),
+    ("LIST TABLES myNamespace.subnamespace", "TABLES", "myNamespace.subnamespace")
+])
+def test_parse_sql_list_parametrized(query, expected_subtype, expected_argument):
+    """Parametrized test for SQL SELECT table name parsing"""
+    parsedQuery = QueryManager(query)
+    
+    (subtype, argument) = parsedQuery.extract_list_arguments()
+    
+    assert subtype == expected_subtype
+    assert argument == expected_argument
+
 
 # Fixtures for parameterized tests
 @pytest.mark.parametrize("query,expected_table", [
