@@ -52,6 +52,27 @@ class QueryManager:
 
         return (subtype, argument)
 
+    def extract_create_table_arguments(self) -> tuple[str, Any]:
+        """ Extract the table name and arguments of the table to create
+            and the schema arguments
+        """
+        if self.statement.tokens[2].value.upper() != "TABLE":
+            raise ValueError(f"Unsupported CREATE statement for {self.statement.tokens[2].value}")
+        
+        i: int
+        table_name: str = None
+        schema: dict = None
+        for i, token in enumerate(self.statement.tokens[4:]):
+            if isinstance(token, sqlparse.sql.Identifier):
+                table_name = token.value
+                break
+
+        if i + 2 < len(self.statement.tokens) and \
+            isinstance(self.statement.tokens[4+i+2], sqlparse.sql.Parenthesis):
+            schema = self._extract_table_def(self.statement.tokens[4+i+2])
+                    
+        return (table_name, schema)
+
 
     def extract_select_table(self) -> str | None:
         """ Extract table name for the SELECT
@@ -136,3 +157,34 @@ class QueryManager:
             if token.ttype is sqltokens.DML or token.ttype is sqltokens.DDL:
                 self.type = token.value.upper()
                 break
+
+    def _extract_table_def(self, token_list: sqlparse.sql.Parenthesis):
+        """ Extract the table definition from the Parenthesis token 
+            Adapted from sqlparse examples, could be nicer    
+        """
+        definitions = {}
+        tmp = []
+        par_level = 0
+        for token in token_list.flatten():
+            if token.is_whitespace:
+                continue
+            elif token.match(sqlparse.tokens.Punctuation, '('):
+                par_level += 1
+                if par_level > 1:
+                    tmp.append(token)
+                continue
+            elif token.match(sqlparse.tokens.Punctuation, ')'):
+                if par_level <= 1:
+                    if len(tmp) > 1:
+                        definitions[str(tmp[0])] = " ".join(str(t).upper() for t in tmp[1:])
+                    break
+                else:
+                    tmp.append(token)
+                    par_level -= 1
+            elif token.match(sqlparse.tokens.Punctuation, ','):
+                if len(tmp) > 1:
+                    definitions[str(tmp[0])] = " ".join(str(t).upper() for t in tmp[1:])
+                tmp = []
+            else:
+                tmp.append(token)
+        return definitions

@@ -47,7 +47,7 @@ class IcebergServer(Server):
                         "properties": {
                             "query": {
                                 "type": "string",
-                                "description": "Query to execute on the catalog (LIST TABLES, DESCRIBE TABLE)"
+                                "description": "Query to execute on the catalog (LIST NAMESPACES, LIST TABLES, DESCRIBE TABLE)"
                             }
                         },
                         "required": ["query"]

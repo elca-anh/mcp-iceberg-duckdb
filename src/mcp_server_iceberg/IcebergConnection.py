@@ -173,15 +173,11 @@ class IcebergConnection:
                 # Basic CREATE TABLE support            
                 if "CREATE TABLE" in query.strip().upper():
                     # Extract table name and schema
-                    parts = query.split("(", 1)
-                    table_name = parts[0].replace("CREATE TABLE", "").strip()
-                    schema_str = parts[1].strip()[:-1]  # Remove trailing )
+                    (table_name, schema) = parsedQuery.extract_create_table_arguments()
                     
                     # Parse schema definition
                     schema_fields = []
-                    for field in schema_str.split(","):
-                        name, type_str = field.strip().split(" ", 1)
-                        type_str = type_str.upper()
+                    for name, type_str in schema.items():
                         if "STRING" in type_str:
                             field_type = StringType()
                         elif "INT" in type_str:
@@ -191,6 +187,7 @@ class IcebergConnection:
                         elif "TIMESTAMP" in type_str:
                             field_type = TimestampType()
                         else:
+                            # Defaulting to String type
                             field_type = StringType()
                         schema_fields.append(NestedField(len(schema_fields), name, field_type, required=False))
                     

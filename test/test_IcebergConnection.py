@@ -239,7 +239,10 @@ class TestIcebergConnection:
         mock_catalog.create_table.assert_called_once()
         args, kwargs = mock_catalog.create_table.call_args
         assert args[0] == "users"  # table name
-        assert isinstance(args[1], Schema)  # schema
+        assert isinstance(args[1], Schema) # schema
+        assert len(args[1]) == 3
+        assert args[1].fields[0].name == 'id'
+        assert args[1].fields[0].field_type == IntegerType()
         assert result == [{"status": "Table created successfully"}]
     
     @patch.object(IcebergConnection, '_ensure_connection')

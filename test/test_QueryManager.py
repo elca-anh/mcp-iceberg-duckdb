@@ -52,6 +52,20 @@ def test_parse_sql_list_parametrized(query, expected_subtype, expected_argument)
 
 
 # Fixtures for parameterized tests
+@pytest.mark.parametrize("query,expected_table_name, expected_schema", [
+    ("CREATE TABLE silver.new_table (id INT)", "silver.new_table", {'id': 'INT'}),
+    ("CREATE TABLE IF NOT EXISTS users (id INT, name string)", "users", {'id': 'INT', 'name': 'STRING'}), # first NVARCHAR(64))
+])
+def test_parse_sql_create_Table_parametrized(query, expected_table_name, expected_schema):
+    """Parametrized test for SQL SELECT table name parsing"""
+    parsedQuery = QueryManager(query)
+    
+    (table_name, schema) = parsedQuery.extract_create_table_arguments()
+    
+    assert table_name == expected_table_name
+    assert schema == expected_schema
+
+# Fixtures for parameterized tests
 @pytest.mark.parametrize("query,expected_table", [
     ("SELECT * FROM users", "users"),
     ("SELECT * FROM users u", "users"),
