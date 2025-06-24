@@ -6,6 +6,7 @@ from pyiceberg.types import *
 import logging
 import time
 from typing import Any
+from datetime import datetime
 
 from .QueryManager import QueryManager
 
@@ -136,18 +137,17 @@ class IcebergConnection:
                     raise ValueError(f"Invalid INSERT statement, missing table name or values")
                 
                 logger.info(f"Inserting into table: {table_name}")
-                logger.info(f"Values: {values}")
+                logger.debug(f"Values: {values}")
                 
                 # Load table and schema
-                table = catalog.load_table(table_name.split('.'))
+                table = catalog.load_table(table_name)
                 schema = table.schema()
                 
                 # Create PyArrow arrays for each field
                 arrays = []
                 names = []
-                for i, field in enumerate(schema.fields):
+                for i, (field, value) in enumerate(zip(schema.fields, values)):
                     names.append(field.name)
-                    value = values[i] if i < len(values) else None
                     if isinstance(field.field_type, IntegerType):
                         arrays.append(pa.array([value], type=pa.int32()))
                     elif isinstance(field.field_type, StringType):
@@ -157,7 +157,13 @@ class IcebergConnection:
                     elif isinstance(field.field_type, DoubleType):
                         arrays.append(pa.array([value], type=pa.float64()))
                     elif isinstance(field.field_type, TimestampType):
-                        arrays.append(pa.array([value], type=pa.timestamp('us')))
+                        dt = datetime.fromisoformat(value)
+                        timestamp_us = int(dt.timestamp() * 1000000)
+                        arrays.append(pa.array([timestamp_us], type=pa.timestamp('us'))) # Pyiceberg is in microseconds
+                    elif isinstance(field.field_type, TimestamptzType):
+                        dt = datetime.fromisoformat(value)
+                        timestamp_us = int(dt.timestamp() * 1000000)
+                        arrays.append(pa.array([timestamp_us], type=pa.timestamp('us'))) #TODO process time zone properly
                     else:
                         arrays.append(pa.array([value], type=pa.string()))
                 
@@ -167,6 +173,7 @@ class IcebergConnection:
                 # Append the PyArrow table directly to the Iceberg table
                 table.append(pa_table)
                 
+                logger.info(f"Successfully inserted 1 row into table {table_name}")
                 return [{"status": "Inserted 1 row successfully"}]
 
             if parsedQuery.type == "CREATE":
@@ -193,6 +200,8 @@ class IcebergConnection:
                     
                     schema = Schema(*schema_fields)
                     catalog.create_table(table_name, schema)
+
+                    logger.info(f"Successfully created table {table_name}")
                     return [{"status": "Table created successfully"}]
 
             else:

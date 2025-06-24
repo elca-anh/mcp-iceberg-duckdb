@@ -17,3 +17,6 @@ venv/
 
 # Logs
 *.log
+
+# Test files to refine
+test/test_integration/test_IcebergConnectionIntegration.py

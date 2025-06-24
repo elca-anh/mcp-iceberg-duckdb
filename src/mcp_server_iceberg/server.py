@@ -100,7 +100,7 @@ class IcebergServer(Server):
                     
                     return [TextContent(
                         type="text",
-                        text=f"Results (execution time: {execution_time:.2f}s):\n{json.dumps(result, indent=2, default=str)}"
+                        text=f"Results (execution time: {execution_time:.2f}s):\n{json.dumps(result, indent=None, default=str)}"
                     )]
                 
             except Exception as e:

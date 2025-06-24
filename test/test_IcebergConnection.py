@@ -2,7 +2,7 @@ import pytest
 from unittest.mock import Mock, patch
 import pyarrow as pa
 from pyiceberg.schema import Schema
-from pyiceberg.types import StringType, IntegerType, DoubleType, NestedField
+from pyiceberg.types import StringType, IntegerType, DoubleType, NestedField, TimestampType, TimestamptzType
 from pyiceberg.catalog import Catalog
 from pyiceberg.table import Table
 
@@ -214,13 +214,15 @@ class TestIcebergConnection:
         # Mock schema for INSERT
         schema_fields = [
             NestedField(0, "id", IntegerType(), required=True),
-            NestedField(1, "name", StringType(), required=False)
+            NestedField(1, "name", StringType(), required=False),
+            NestedField(2, "date", TimestampType(), required=False),
+            NestedField(3, "datez", TimestamptzType(), required=False)
         ]
         schema = Schema(*schema_fields)
         mock_table.schema.return_value = schema
         
         # Act
-        query = "INSERT INTO users VALUES (1, 'John')"           
+        query = "INSERT INTO users VALUES (1, 'John', '2025-06-24 12:00:00+01:00', '2025-06-24 12:00:00+01:00')"
         result = connection.query_table(query)
             
         mock_table.append.assert_called_once()
@@ -265,13 +267,6 @@ class TestIcebergConnection:
         """Test close method when no catalog is connected"""
         connection.close()  # Should not raise any exception
         assert connection.catalog is None
-
-class TestIcebergConnectionIntegration:
-    """Integration tests for IcebergConnection"""
-    
-    @pytest.fixture
-    def connection(self):
-        return IcebergConnection()
     
     @patch('mcp_server_iceberg.IcebergConnection.logger')
     def test_logging_behavior(self, mock_logger, connection):
