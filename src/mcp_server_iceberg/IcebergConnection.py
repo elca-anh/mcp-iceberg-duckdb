@@ -163,7 +163,7 @@ class IcebergConnection:
                     elif isinstance(field.field_type, TimestamptzType):
                         dt = datetime.fromisoformat(value)
                         timestamp_us = int(dt.timestamp() * 1000000)
-                        arrays.append(pa.array([timestamp_us], type=pa.timestamp('us'))) #TODO process time zone properly
+                        arrays.append(pa.array([timestamp_us], type=pa.timestamp('us', tz='UTC'))) #TODO process time zone properly
                     else:
                         arrays.append(pa.array([value], type=pa.string()))
                 
