@@ -9,7 +9,7 @@ from mcp.server import Server
 from mcp.types import Tool, TextContent
 from pyiceberg.expressions import *
 from pyiceberg.types import *
-from .IcebergConnection import IcebergConnection
+from mcp_server_iceberg.IcebergConnection import IcebergConnection
 import sys
 
 # Configure logging

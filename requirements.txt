@@ -1,6 +1,0 @@
-duckdb
-pyiceberg[adlfs,duckdb]
-python-dotenv
-mcp
-pyarrow  # Required for PyIceberg data handling
-sqlparse  # Required for SQL parsing 

@@ -8,7 +8,7 @@
 A MCP (Model Context Protocol) server to talk to your data in Iceberg format using an LLM, for example Claude.
 
 ## Claude Desktop as your Iceberg Data Lake browser
-![image](claude-desktop-ss.png)
+![image](claude-desktop-weather.png)
 
 ## How to Install in Claude Desktop
 
@@ -32,7 +32,7 @@ First review the module dependencies in requirements.txt to match your case (AWS
 Then install or update the dependencies
 
 ```python
-uv add -r .\requirements.txt
+uv sync
 ```
 
 - Setup connection to the Iceberg dictionary
@@ -57,7 +57,7 @@ Add the following configuration to `claude_desktop_config.json`:
       "command": "uv",
       "args": [
         "--directory",
-        "PATH_TO_/mcp-iceberg-service",
+        "PATH_TO_/mcp-iceberg-duckdb",
         "run",
         "mcp-server-iceberg"
       ]
@@ -112,7 +112,7 @@ The server utilizes PyIceberg in several ways:
 1. **Query Operations improvements**
    - [ ] Implement UPDATE operations
    - [ ] Add DELETE support
-   - [ ] Support for CREATE TABLE with schema definition
+   - [ ] Support for INSERT with column spec
    - [ ] Add ALTER TABLE operations
    - [ ] Implement table partitioning support
 

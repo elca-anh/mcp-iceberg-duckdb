@@ -26,6 +26,7 @@ packages = ["src/mcp_server_iceberg"]
 
 [dependency-groups]
 dev = [
+    "mcp[cli]>=1.4.1",
     "pytest>=8.4.1",
 ]
 

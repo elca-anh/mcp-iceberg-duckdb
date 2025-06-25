@@ -8,7 +8,7 @@ import time
 from typing import Any
 from datetime import datetime
 
-from .QueryManager import QueryManager
+from mcp_server_iceberg.QueryManager import QueryManager
 
 logger = logging.getLogger('iceberg_server')
 
