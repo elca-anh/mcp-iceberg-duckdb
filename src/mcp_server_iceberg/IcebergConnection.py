@@ -1,13 +1,14 @@
-import logging
-import time
-from typing import Any, Dict
+import pyarrow as pa
 from pyiceberg.catalog import load_catalog
-from pyiceberg.expressions import *
 from pyiceberg.schema import Schema
 from pyiceberg.types import *
-import sqlparse
-from sqlparse.tokens import DML
-import pyarrow as pa
+
+import logging
+import time
+from typing import Any
+from datetime import datetime
+
+from mcp_server_iceberg.QueryManager import QueryManager
 
 logger = logging.getLogger('iceberg_server')
 
@@ -17,57 +18,10 @@ class IcebergConnection:
     """
     def __init__(self):
         self.catalog = None
-            
-    def ensure_connection(self):
+    
+    def query_catalog(self, query: str) -> list[dict[str, Any]]:
         """
-        Ensure catalog connection is available
-        """
-        try:
-            if self.catalog is None:
-                logger.info("Creating new Iceberg catalog connection for catalog 'iceberg'")
-                self.catalog = load_catalog("iceberg")
-                logger.info("New catalog connection established")
-            return self.catalog
-        except Exception as e:
-            logger.error(f"Connection error: {str(e)}")
-            raise
-
-    def parse_sql(self, query: str) -> Dict:
-        """
-        Parse SQL query and extract relevant information
-        
-        Args:
-            query (str): SQL query to parse
-            
-        Returns:
-            Dict: Parsed query information
-        """
-        parsed = sqlparse.parse(query)[0]
-        tokens = [token for token in parsed.tokens if not token.is_whitespace]
-        
-        result = {
-            "type": None,
-            "table": None,
-        }
-        
-        # Determine query type
-        for token in tokens:
-            if token.ttype is DML:
-                result["type"] = token.value.upper()
-                break
-        
-        # Extract table name
-        for i, token in enumerate(tokens):
-            if token.value.upper() == "FROM":
-                if i + 1 < len(tokens):
-                    result["table"] = tokens[i + 1].value
-                break
-        
-        return result
-
-    def execute_query(self, query: str) -> list[dict[str, Any]]:
-        """
-        Execute query on Iceberg tables
+        Retrieve information or create table (DDL) on Iceberg catalog
         
         Args:
             query (str): Query to execute
@@ -79,46 +33,86 @@ class IcebergConnection:
         logger.info(f"Executing query: {query[:200]}...")
         
         try:
-            catalog = self.ensure_connection()
-            query_upper = query.strip().upper()
+            catalog = self._ensure_connection()
+            parsedQuery = QueryManager(query)
             
             # Handle special commands
-            if query_upper.startswith("LIST TABLES"):
-                results = []
-                for namespace in catalog.list_namespaces():
-                    for table in catalog.list_tables(namespace):
+            if parsedQuery.type == "LIST":
+                (subtype, argument) = parsedQuery.extract_list_arguments()
+                if subtype == "NAMESPACES":
+                    results = []
+                    namespaces = catalog.list_namespaces(argument) if argument else catalog.list_namespaces()
+                    for namespace in namespaces:
                         results.append({
-                            "namespace": ".".join(namespace),
-                            "table": table
-                        })
-                logger.info(f"Listed {len(results)} tables in {time.time() - start_time:.2f}s")
-                return results
+                                "namespace": ".".join(namespace)
+                            })
+                    logger.info(f"Listed {len(results)} namespaces in {time.time() - start_time:.2f}s")
+                    return results
+                
+                elif subtype == "TABLES":
+                    results = []
+                    # List tables at namespace level or all available namespaces in root
+                    namespaces = [(argument,)] if argument else catalog.list_namespaces()
+                    for namespace in namespaces:
+                        for table in catalog.list_tables(namespace):
+                            results.append({
+                                "namespace": ".".join(namespace),
+                                "table": table
+                            })
+                    logger.info(f"Listed {len(results)} tables in {time.time() - start_time:.2f}s")
+                    return results
             
-            elif query_upper.startswith("DESCRIBE TABLE"):
-                table_name = query[len("DESCRIBE TABLE"):].strip()
-                table = catalog.load_table(table_name)
-                schema_dict = {
-                    "schema": str(table.schema()),
-                    "partition_spec": [str(field) for field in (table.spec().fields if table.spec() else [])],
-                    "sort_order": [str(field) for field in (table.sort_order().fields if table.sort_order() else [])],
-                    "properties": table.properties
-                }
-                return [schema_dict]
+            elif parsedQuery.type == "DESCRIBE":
+                if parsedQuery.statement.tokens[2].value.upper() == "TABLE":
+                    table_name = parsedQuery.statement.tokens[4].value
+                    table = catalog.load_table(table_name)
+                    schema_dict = {
+                        "schema": str(table.schema()),
+                        "partition_spec": [str(field) for field in (table.spec().fields if table.spec() else [])],
+                        "sort_order": [str(field) for field in (table.sort_order().fields if table.sort_order() else [])],
+                        "properties": table.properties
+                    }
+                    return [schema_dict]          
+            else:
+                raise ValueError(f"Unsupported catalog query type")
             
+        except Exception as e:
+            logger.error(f"Query error: {str(e)}")
+            logger.error(f"Error type: {type(e).__name__}")
+            raise
+
+    def query_table(self, query: str) -> list[dict[str, Any]]:
+        """
+        Execute a data modeling query on an Iceberg table
+        
+        Args:
+            query (str): Query to execute
+            
+        Returns:
+            list[dict[str, Any]]: Query results
+        """
+
+        start_time = time.time()
+        logger.info(f"Executing query: {query[:200]}...")
+        
+        try:
+            catalog = self._ensure_connection()
+                 
             # Handle SQL queries
-            parsed = self.parse_sql(query)
+            parsedQuery = QueryManager(query)
             
-            if parsed["type"] == "SELECT":
+            if parsedQuery.type == "SELECT":
 
                 # Load and scan table
-                table = catalog.load_table(parsed["table"])
+                table_name = parsedQuery.extract_select_table()
+                table = catalog.load_table(table_name)
                 scan = table.scan()
                 
                 # Use DuckDB to postprocess the table
                 # to_duckdb() is using register() which is in schema main -> "flatten" the original table name
-                table_name2 = parsed["table"].replace('.', '_')
+                table_name2 = table_name.replace('.', '_')
                 conn = scan.to_duckdb(table_name=table_name2) # Full scan at this time, to optimize
-                query_duck = query.replace(parsed["table"], "main." + table_name2)
+                query_duck = query.replace(table_name, "main." + table_name2)
                 duckdb_result = conn.sql(query_duck)
                 arrow_table = duckdb_result.arrow()
                 
@@ -135,62 +129,15 @@ class IcebergConnection:
                 logger.info(f"Query returned {len(results)} rows in {time.time() - start_time:.2f}s")
                 return results
             
-            elif parsed["type"] == "INSERT":
+            elif parsedQuery.type == "INSERT":
                 # Extract table name and values
-                table_name = None
-                values = []
-                
-                # Parse INSERT INTO table_name VALUES (...) syntax
-                parsed_stmt = sqlparse.parse(query)[0]
-                logger.info(f"Parsed statement: {parsed_stmt}")
-                
-                # Find the VALUES token and extract values
-                values_token = None
-                table_identifier = None
-                
-                for token in parsed_stmt.tokens:
-                    logger.info(f"Token: {token}, Type: {token.ttype}, Value: {token.value}")
-                    if isinstance(token, sqlparse.sql.Identifier):
-                        table_identifier = token
-                    elif token.value.upper() == 'VALUES':
-                        values_token = token
-                        break
-                
-                if table_identifier:
-                    # Handle multi-part identifiers (e.g., schema.table)
-                    table_name = str(table_identifier)
-                    logger.info(f"Found table name: {table_name}")
-                
-                if values_token and len(parsed_stmt.tokens) > parsed_stmt.tokens.index(values_token) + 1:
-                    next_token = parsed_stmt.tokens[parsed_stmt.tokens.index(values_token) + 1]
-                    if isinstance(next_token, sqlparse.sql.Parenthesis):
-                        values_str = next_token.value.strip('()').split(',')
-                        values = []
-                        for v in values_str:
-                            v = v.strip()
-                            if v.startswith("'") and v.endswith("'"):
-                                values.append(v.strip("'"))
-                            elif v.lower() == 'true':
-                                values.append(True)
-                            elif v.lower() == 'false':
-                                values.append(False)
-                            elif v.lower() == 'null':
-                                values.append(None)
-                            else:
-                                try:
-                                    values.append(int(v))
-                                except ValueError:
-                                    try:
-                                        values.append(float(v))
-                                    except ValueError:
-                                        values.append(v)
-                        logger.info(f"Extracted values: {values}")
+                (table_name, values) = parsedQuery.extract_insert_table_values()
                 
                 if not table_name or values is None:
-                    raise ValueError(f"Invalid INSERT statement format. Table: {table_name}, Values: {values}")
+                    raise ValueError(f"Invalid INSERT statement, missing table name or values")
                 
                 logger.info(f"Inserting into table: {table_name}")
-                logger.info(f"Values: {values}")
+                logger.debug(f"Values: {values}")
                 
                 # Load table and schema
                 table = catalog.load_table(table_name)
@@ -199,9 +146,8 @@ class IcebergConnection:
                 # Create PyArrow arrays for each field
                 arrays = []
                 names = []
-                for i, field in enumerate(schema.fields):
+                for i, (field, value) in enumerate(zip(schema.fields, values)):
                     names.append(field.name)
-                    value = values[i] if i < len(values) else None
                     if isinstance(field.field_type, IntegerType):
                         arrays.append(pa.array([value], type=pa.int32()))
                     elif isinstance(field.field_type, StringType):
@@ -211,7 +157,13 @@ class IcebergConnection:
                     elif isinstance(field.field_type, DoubleType):
                         arrays.append(pa.array([value], type=pa.float64()))
                     elif isinstance(field.field_type, TimestampType):
-                        arrays.append(pa.array([value], type=pa.timestamp('us')))
+                        dt = datetime.fromisoformat(value)
+                        timestamp_us = int(dt.timestamp() * 1000000)
+                        arrays.append(pa.array([timestamp_us], type=pa.timestamp('us'))) # Pyiceberg is in microseconds
+                    elif isinstance(field.field_type, TimestamptzType):
+                        dt = datetime.fromisoformat(value)
+                        timestamp_us = int(dt.timestamp() * 1000000)
+                        arrays.append(pa.array([timestamp_us], type=pa.timestamp('us', tz='UTC'))) #TODO process time zone properly
                     else:
                         arrays.append(pa.array([value], type=pa.string()))
                 
@@ -221,21 +173,18 @@ class IcebergConnection:
                 # Append the PyArrow table directly to the Iceberg table
                 table.append(pa_table)
                 
+                logger.info(f"Successfully inserted 1 row into table {table_name}")
                 return [{"status": "Inserted 1 row successfully"}]
-            
-            elif parsed["type"] == "CREATE":
-                # Basic CREATE TABLE support
-                if "CREATE TABLE" in query_upper:
+
+            if parsedQuery.type == "CREATE":
+                # Basic CREATE TABLE support            
+                if "CREATE TABLE" in query.strip().upper():
                     # Extract table name and schema
-                    parts = query.split("(", 1)
-                    table_name = parts[0].replace("CREATE TABLE", "").strip()
-                    schema_str = parts[1].strip()[:-1]  # Remove trailing )
+                    (table_name, schema) = parsedQuery.extract_create_table_arguments()
                     
                     # Parse schema definition
                     schema_fields = []
-                    for field in schema_str.split(","):
-                        name, type_str = field.strip().split(" ", 1)
-                        type_str = type_str.upper()
+                    for name, type_str in schema.items():
                         if "STRING" in type_str:
                             field_type = StringType()
                         elif "INT" in type_str:
@@ -245,15 +194,18 @@ class IcebergConnection:
                         elif "TIMESTAMP" in type_str:
                             field_type = TimestampType()
                         else:
+                            # Defaulting to String type
                             field_type = StringType()
                         schema_fields.append(NestedField(len(schema_fields), name, field_type, required=False))
                     
                     schema = Schema(*schema_fields)
                     catalog.create_table(table_name, schema)
+
+                    logger.info(f"Successfully created table {table_name}")
                     return [{"status": "Table created successfully"}]
-            
+
             else:
-                raise ValueError(f"Unsupported query type: {parsed['type']}")
+                raise ValueError(f"Unsupported query type: {parsedQuery.type}")
                 
         except Exception as e:
             logger.error(f"Query error: {str(e)}")
@@ -267,3 +219,17 @@ class IcebergConnection:
         if self.catalog:
             logger.info("Cleaning up catalog resources")
             self.catalog = None
+
+    def _ensure_connection(self):
+        """
+        Ensure catalog connection is available
+        """
+        try:
+            if self.catalog is None:
+                logger.info("Creating new Iceberg catalog connection for catalog 'iceberg'")
+                self.catalog = load_catalog("iceberg")
+                logger.info("New catalog connection established")
+            return self.catalog
+        except Exception as e:
+            logger.error(f"Connection error: {str(e)}")
+            raise
